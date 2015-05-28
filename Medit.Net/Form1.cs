@@ -28,27 +28,166 @@ namespace Medit.Net
         public const string CSSGitHub2 = ".\\CSS\\GitHub2.css";
 
         protected TextBox currentEditor;
+        protected DocumentInfo currentDocument;
         protected string currentCSS = CSSGitHub;
 
         private string lastKeyword;
+
+        public class DocumentInfo
+        {
+            public string FilePath;
+            public string FileName;
+            public string Title;
+            public bool isModified;
+            public TextBox editor;
+            public TabPage tab;
+            private Form1 frm;
+
+            public DocumentInfo(Form1 frm)
+            {
+                this.frm = frm;
+                this.FilePath = null;
+                this.FileName = null;
+                this.Title = "undefined";
+                this.isModified = false;
+                buildControls();
+            }
+
+            public DocumentInfo(Form1 frm, string path)
+            {
+                this.frm = frm;
+                this.FilePath = path;
+                this.FileName = Path.GetFileName(path);
+                this.Title = this.FileName;
+                this.isModified = false;
+                buildControls();
+            }
+
+            private void buildControls()
+            {
+                this.editor = createMarkdownEditor();
+                this.tab = createMarkdownTabPage();
+                frm.tabs.TabPages.Add(this.tab);
+            }
+
+            public void close()
+            {
+                save();
+                this.tab.Controls.Remove(this.editor);
+                frm.tabs.TabPages.Remove(this.tab);
+            }
+
+            private void _save_file()
+            {
+                if (this.FileName == null)
+                {
+                    this.FilePath = frm.saveMarkdown(this.editor); // need to ask the location
+                    if (this.FilePath == "") return; // save cancelled by user
+                    this.FileName = Path.GetFileName(this.FilePath);
+                    this.Title = this.FileName;
+                }
+                else
+                {
+                    try
+                    {
+                        File.WriteAllText(this.FilePath, this.editor.Text);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Failed to write to the file.\n" + ex.Message);
+                        return;
+                    }
+                }
+                isModified = false;
+                this.tab.Text = this.Title;
+            }
+
+            public void save(bool noprompt = false)
+            {
+                if (noprompt)
+                {
+                    _save_file();
+                }
+                else if (isModified)
+                {
+                    switch (MessageBox.Show("Would you like to save the changes?", this.Title, MessageBoxButtons.YesNo, MessageBoxIcon.Question))
+                    {
+                        case DialogResult.Yes:
+                            _save_file();
+                            break;
+                    }
+                }
+            }
+
+            public void onChanged()
+            {
+                if (!isModified)
+                {
+                    isModified = true;
+                    this.tab.Text = "* " + this.Title;
+                }
+            }
+
+            protected TextBox createMarkdownEditor()
+            {
+                TextBox tb = new TextBox();
+                tb.WordWrap = true;
+                tb.Multiline = true;
+                tb.ScrollBars = ScrollBars.Both;
+                tb.HideSelection = false;
+                tb.AcceptsTab = true;
+                tb.AcceptsReturn = true;
+                tb.Location = new Point(0, 0);
+                tb.Dock = DockStyle.Fill;
+                tb.Visible = true;
+                tb.TextChanged += frm.Editor_onTextChanged;
+                tb.Tag = this;
+                return tb;
+            }
+
+            protected TabPage createMarkdownTabPage()
+            {
+                TabPage tp = new TabPage(this.Title);
+                tp.Controls.Add(this.editor);
+                tp.Tag = this;
+                return tp;
+            }
+        };
 
         public Form1()
         {
             InitializeComponent();
 
-            currentEditor = this.tbSource;
-            // Initialize WebView Control
-            wbPreview.Navigate("about:blank");
         }
 
-        private void tbSource_TextChanged(object sender, EventArgs e)
+        public void Editor_onTextChanged(object sender, EventArgs e)
         {
-            if (previewToolStripMenuItem.Checked)
-                RefreshPreview();
+            if (currentDocument != null)
+            {
+                if (previewToolStripMenuItem.Checked)
+                    RefreshPreview();
+                currentDocument.onChanged();
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
+            // Initialize WebView Control
+            wbPreview.Navigate("about:blank");
+            // Create new document
+            DocumentInfo def = new DocumentInfo(this);
+            setCurrentDocument(def.tab);
+        }
+
+        public void setCurrentDocument(TabPage tp)
+        {
+            if (tp == null) return;
+            var doc = tp.Tag as DocumentInfo;
+            tabs.SelectTab(tp);
+            currentDocument = doc;
+            currentEditor = doc.editor;
+            currentEditor.Focus();
+            RefreshPreview();
         }
 
         public void RefreshPreview()
@@ -135,7 +274,14 @@ namespace Medit.Net
         private void previewToolStripMenuItem_CheckedChanged(object sender, EventArgs e)
         {
             if (previewToolStripMenuItem.Checked)
+            {
+                statusPanel.Text = "Real-Time Preview Enabled";
                 RefreshPreview(); // refresh it immediately when enabling preview
+            }
+            else
+            {
+                statusPanel.Text = "Real-Time Preview Disabled";
+            }
         }
 
         private void previewinbrowserToolStripMenuItem_Click(object sender, EventArgs e)
@@ -212,16 +358,18 @@ namespace Medit.Net
                 menuItem.Checked = (menuItem == selectedItem);
             currentCSS = selectedCSS;
             RefreshPreview();
+            statusPanel.Text = "Selected CSS File: " + selectedCSS;
         }
 
         private void newToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            
+            DocumentInfo def = new DocumentInfo(this);
+            setCurrentDocument(def.tab);
         }
 
         private void selectAllToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            tbSource.SelectAll();
+            currentEditor.SelectAll();
         }
 
         private void copyHTMLStripMenuItem10_Click(object sender, EventArgs e)
@@ -238,6 +386,7 @@ namespace Medit.Net
 
         public bool findTextInEditor(string keyword, int startpos)
         {
+            if (keyword == null || keyword == "") return false;
             int occurPos = currentEditor.Text.IndexOf(keyword, startpos);
             if (occurPos >= 0)
             {
@@ -247,6 +396,7 @@ namespace Medit.Net
             }
             else
             {
+                statusPanel.Text = keyword + " not found";
                 return false;
             }
         }
@@ -259,20 +409,42 @@ namespace Medit.Net
 
         private void gotoLineToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            int lineNumber;
+            int lineNumber = -1;
             try
             {
                 lineNumber = int.Parse(Microsoft.VisualBasic.Interaction.InputBox("Line number: (starting from 1)", "GoTo Line")) - 1;
                 currentEditor.SelectionStart = currentEditor.GetFirstCharIndexFromLine(lineNumber);
+                currentEditor.SelectionLength = currentEditor.Lines[lineNumber].Length;
             }catch (Exception ex)
             {
+                statusPanel.Text = "Line " + (lineNumber + 1).ToString() + " doesn't exist.";
             }
-            
         }
 
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            openMarkdownDialog.ShowDialog();
+            if (openMarkdownDialog.FileName != "")
+            {
+                try
+                {
+                    using (var strm = openMarkdownDialog.OpenFile())
+                    {
+                    
+                        byte[] data = new byte[strm.Length];
+                        strm.Read(data, 0, (int)strm.Length);
+                        var doc = new DocumentInfo(this, openMarkdownDialog.FileName);
+                        doc.editor.Text = Encoding.UTF8.GetString(data);
+                        setCurrentDocument(doc.tab);
+                    }
+                    statusPanel.Text = "Loaded successfully";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Failed to open file.\n" + ex.Message, "Open Markdown File", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
 
+            }
         }
 
         private void exportHTMLToolStripMenuItem_Click(object sender, EventArgs e)
@@ -285,17 +457,17 @@ namespace Medit.Net
                 {
                     strm.Write(data, 0, data.Length);
                 }
+                statusPanel.Text = "Export success";
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Unable to save file.\n" + ex.Message, "Save Markdown File", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Unable to save file.\n" + ex.Message, "Export HTML", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            // TODO: prompt to save changes
-            Application.Exit();
+            this.Close();
         }
 
         private void printHTMLToolStripMenuItem_Click(object sender, EventArgs e)
@@ -317,6 +489,112 @@ namespace Medit.Net
         private void currentDateToolStripMenuItem_Click(object sender, EventArgs e)
         {
             currentEditor.SelectedText = currentEditor.SelectedText + DateTime.Now.ToLocalTime().ToLongDateString();
+        }
+
+        private void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            saveMarkdown(currentEditor);
+        }
+
+        protected string saveMarkdown(TextBox editor)
+        {
+            saveMarkdownDialog.ShowDialog();
+            if (saveMarkdownDialog.FileName == "") return "";
+
+            try
+            {
+                byte[] data = Encoding.UTF8.GetBytes(editor.Text);
+                using (var strm = saveMarkdownDialog.OpenFile())
+                {
+                    strm.Write(data, 0, data.Length);
+                }
+                statusPanel.Text = "Saved";
+                return saveMarkdownDialog.FileName;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Unable to save file.\n" + ex.Message, "Save", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return "";
+        }
+
+        private void tabs_Selected(object sender, TabControlEventArgs e)
+        {
+            setCurrentDocument(e.TabPage);
+        }
+
+        private void editToolStripMenuItem_DropDownOpening(object sender, EventArgs e)
+        {
+            foreach (var item in editToolStripMenuItem.DropDownItems)
+            {
+                if (item is ToolStripMenuItem)
+                    (item as ToolStripMenuItem).Enabled = (currentEditor != null);
+            }
+        }
+
+        private void closeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (currentDocument != null)
+            {
+                currentDocument.close();
+            }
+        }
+
+        private void tabs_Deselected(object sender, TabControlEventArgs e)
+        {
+            currentDocument = null;
+            currentEditor = null;
+        }
+
+        private void insertToolStripMenuItem_DropDownOpening(object sender, EventArgs e)
+        {
+            foreach (var item in insertToolStripMenuItem.DropDownItems)
+            {
+                if (item is ToolStripMenuItem)
+                    (item as ToolStripMenuItem).Enabled = (currentEditor != null);
+            }
+
+        }
+
+        private void saveToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            currentDocument.save(true);
+        }
+
+        private void closeAllToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            while (currentDocument != null)
+            {
+                currentDocument.close();
+            }
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // prompt to save changes at exit
+            closeAllToolStripMenuItem_Click(null, null);
+        }
+
+        private void fileToolStripMenuItem_DropDownOpening(object sender, EventArgs e)
+        {
+            saveToolStripMenuItem.Enabled = (currentDocument != null);
+            saveAsToolStripMenuItem.Enabled = (currentDocument != null);
+            closeToolStripMenuItem.Enabled = (currentDocument != null);
+            printHTMLToolStripMenuItem.Enabled = (currentDocument != null);
+            exportHTMLToolStripMenuItem.Enabled = (currentDocument != null);
+        }
+
+        private void nextToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (tabs.SelectedIndex + 1 < tabs.TabCount)
+                setCurrentDocument(tabs.TabPages[tabs.SelectedIndex + 1]);
+        }
+
+        private void prevToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+
+            if (tabs.SelectedIndex -1>=0)
+                setCurrentDocument(tabs.TabPages[tabs.SelectedIndex - 1]);
         }
     }
 
