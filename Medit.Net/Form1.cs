@@ -478,7 +478,15 @@ namespace Medit.Net
 
         private void boldToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            currentEditor.SelectedText = "**" + currentEditor.SelectedText + "**";
+            if (currentEditor.SelectedText == "")
+            {
+                currentEditor.SelectedText = "**" + currentEditor.SelectedText + "**";
+                currentEditor.SelectionStart -= 2;
+            }
+            else
+            {
+                currentEditor.SelectedText = "**" + currentEditor.SelectedText + "**";
+            }
         }
 
         private void timestampToolStripMenuItem_Click(object sender, EventArgs e)
@@ -595,6 +603,60 @@ namespace Medit.Net
 
             if (tabs.SelectedIndex -1>=0)
                 setCurrentDocument(tabs.TabPages[tabs.SelectedIndex - 1]);
+        }
+
+        private void emphasizeStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (currentEditor.SelectedText == "")
+            {
+                currentEditor.SelectedText = "*" + currentEditor.SelectedText + "*";
+                currentEditor.SelectionStart -= 1;
+            }
+            else
+            {
+                currentEditor.SelectedText = "*" + currentEditor.SelectedText + "*";
+            }
+        }
+
+        private void inlineToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (currentEditor.SelectedText == "")
+            {
+                currentEditor.SelectedText = "`" + currentEditor.SelectedText + "`";
+                currentEditor.SelectionStart -= 1;
+            }
+            else
+            {
+                currentEditor.SelectedText = "`" + currentEditor.SelectedText + "`";
+            }
+        }
+
+        private void linkToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (currentEditor.SelectedText == "")
+            {
+                currentEditor.SelectedText = "[Link](http://)";
+                currentEditor.Select(currentEditor.SelectionStart - 8, 7);
+            }
+            else
+            {
+                currentEditor.SelectedText = "[" + currentEditor.SelectedText + "](http://)";
+                currentEditor.Select(currentEditor.SelectionStart - 8, 7);
+            }
+        }
+
+        private void imageToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (currentEditor.SelectedText == "")
+            {
+                currentEditor.SelectedText = "![Link](http://)";
+                currentEditor.Select(currentEditor.SelectionStart - 8, 7);
+            }
+            else
+            {
+                currentEditor.SelectedText = "![" + currentEditor.SelectedText + "](http://)";
+                currentEditor.Select(currentEditor.SelectionStart - 8, 7);
+            }
         }
     }
 
